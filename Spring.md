@@ -325,11 +325,14 @@ public interface BeanDefinitionRegistryPostProcessor extends BeanFactoryPostProc
 
 ```java
 public interface BeanPostProcessor {
+    // initializeBean 中会被调用
+    // 初始化之前的增强处理，改变之前创建的Bean实例
 	@Nullable
 	default Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException {
 		return bean;
 	}
 
+     // initializeBean 中会被调用
 	@Nullable
 	default Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
 		return bean;
@@ -423,6 +426,38 @@ public static void registerBeanPostProcessors(
  预测Bean的类型，最后一次改变组件类型，在**registerListeners();**中会被调用
 
 ```java
+public interface SmartInstantiationAwareBeanPostProcessor extends InstantiationAwareBeanPostProcessor {
+
+	@Nullable
+	default Class<?> predictBeanType(Class<?> beanClass, String beanName) throws BeansException {
+		return null;
+	}
+
+	default Class<?> determineBeanType(Class<?> beanClass, String beanName) throws BeansException {
+		return beanClass;
+	}
+
+    // doCreateBean -> createBeanInstance ->determineConstructorsFromBeanPostProcessors
+    // 决定用哪个构造器，如果返回的值不为空，则按照构造器的内容去创建对象
+	@Nullable
+	default Constructor<?>[] determineCandidateConstructors(Class<?> beanClass, String beanName)
+			throws BeansException {
+
+		return null;
+	}
+
+
+	default Object getEarlyBeanReference(Object bean, String beanName) throws BeansException {
+		return bean;
+	}
+
+}
+
+```
+
+**predictBeanType**
+
+```java
 protected void registerListeners() {
     //...
 
@@ -431,9 +466,135 @@ protected void registerListeners() {
     String[] listenerBeanNames = getBeanNamesForType(ApplicationListener.class, true, false);
    // ...
 }
+
+private String[] doGetBeanNamesForType(ResolvableType type, boolean includeNonSingletons, boolean allowEagerInit) {
+		// ...
+    // Check all bean definitions.
+		for (String beanName : this.beanDefinitionNames) {
+			// Only consider bean as eligible if the bean name is not defined as alias for some other bean.
+			if (!isAlias(beanName)) {
+				try {
+					RootBeanDefinition mbd = getMergedLocalBeanDefinition(beanName);
+					// Only check bean definition if it is complete.
+					if (!mbd.isAbstract() && (allowEagerInit ||
+							(mbd.hasBeanClass() || !mbd.isLazyInit() || isAllowEagerClassLoading()) &&
+									!requiresEagerInitForType(mbd.getFactoryBeanName()))) {
+						boolean isFactoryBean = isFactoryBean(beanName, mbd);
+						BeanDefinitionHolder dbd = mbd.getDecoratedDefinition();
+						boolean matchFound = false;
+						boolean allowFactoryBeanInit = (allowEagerInit || containsSingleton(beanName));
+						boolean isNonLazyDecorated = (dbd != null && !mbd.isLazyInit());
+						if (!isFactoryBean) {
+							if (includeNonSingletons || isSingleton(beanName, mbd, dbd)) {
+								matchFound = isTypeMatch(beanName, type, allowFactoryBeanInit);
+							}
+						}
+						else {
+							if (includeNonSingletons || isNonLazyDecorated ||
+									(allowFactoryBeanInit && isSingleton(beanName, mbd, dbd))) {
+								matchFound = isTypeMatch(beanName, type, allowFactoryBeanInit);
+							}
+							if (!matchFound) {
+								// In case of FactoryBean, try to match FactoryBean instance itself next.
+								beanName = FACTORY_BEAN_PREFIX + beanName;
+								if (includeNonSingletons || isSingleton(beanName, mbd, dbd)) {
+									matchFound = isTypeMatch(beanName, type, allowFactoryBeanInit);
+								}
+							}
+						}
+						if (matchFound) {
+							result.add(beanName);
+						}
+					}
+				}
+			}
+		}
+    	// ...
+	}
+
+protected boolean isTypeMatch(String name, ResolvableType typeToMatch, boolean allowFactoryBeanInit)
+			throws NoSuchBeanDefinitionException {
+		// ...
+		// No singleton instance found -> check bean definition.
+		BeanFactory parentBeanFactory = getParentBeanFactory();
+		if (parentBeanFactory != null && !containsBeanDefinition(beanName)) {
+            // 如果当前beanName没有被实例化，那么就会调用SmartInstantiationAwareBeanPostProcessor最后一次确定类型
+			// No bean definition found in this factory -> delegate to parent.
+			return parentBeanFactory.isTypeMatch(originalBeanName(name), typeToMatch);
+		}
+		// ...
+	}
 ```
 
-根据类型获取BeanNames里面会调用**SmartInstantiationAwareBeanPostProcessor**的后置处理器**predictBeanType**，将**beanDefinitionNames**遍历一边，调用**predictBeanType**最后一次确定Bean的类型。（此时beanDefinitionNames是所有的，包含BeanFactoryPostProcessor的对象，他们已经实例化了，虽然在beanDefinitionNames里面，但是不回在经过**predictBeanType**了，普通对象【还没有实例化的对象】会被次方法调用最后一次确定Bean的类型。
+**registerListeners()**里面会实例化监听器，这时候会调用**getBeanNamesForType**根据类型获取**ApplicationListener**类型的信息，但在里面具体实现是遍历每一个beanName，判断beanName是否被实现，也就是查询这个bean是否被创建**getSingleton**，如果没创建就通过**isTypeMatch(beanName, type, allowFactoryBeanInit);**会调用Bean的后置处理器的predictBeanType来判断对象的类型。根据类型获取BeanNames里面会调用**SmartInstantiationAwareBeanPostProcessor**的后置处理器**predictBeanType**，将**beanDefinitionNames**遍历一边，调用**predictBeanType**最后一次确定Bean的类型。（此时beanDefinitionNames是所有的，包含BeanFactoryPostProcessor的对象，他们已经实例化了，虽然在beanDefinitionNames里面，但是不回在经过**predictBeanType**了，普通对象【还没有实例化的对象】会被次方法调用最后一次确定Bean的类型。
+
+registerListeners()会注册监听器，但不会实例化这个普通的bean，后面在**finishBeanFactoryInitialization(beanFactory);**创建Bean实例的时候，还会调用这个bean的后置处理器的**predictBeanType**来确认普通对象的类型，所以这个bean的后置处理在两个地方都会触发。
+
+#### InstantiationAwareBeanPostProcessor
+
+```java
+public interface InstantiationAwareBeanPostProcessor extends BeanPostProcessor {
+	
+    // createBean时候被调用，创建对象权交给自己
+	@Nullable
+	default Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName) throws BeansException {
+		return null;
+	}
+
+    // populateBean
+    // 属性赋值之前，赋值权可自定义
+    // @Autowired就是通过这个PostProcessor实现的，AntowiredAnnotationBeanPostProcessor，但没做啥事
+	default boolean postProcessAfterInstantiation(Object bean, String beanName) throws BeansException {
+        // 自己想注入的属性
+		return true; // 返回false则bean的赋值全部结束
+	}
+	
+    // populateBean
+    // 属性赋值，@Autowired就是通过这个接口解析注解注入的
+	@Nullable
+	default PropertyValues postProcessProperties(PropertyValues pvs, Object bean, String beanName)
+			throws BeansException {
+
+		return pvs;
+	}
+
+}
+
+```
+
+**postProcessBeforeInstantiation**
+
+在**finishBeanFactoryInitialization(beanFactory);**中创建对象createBean的会进行调用，如果bean实现了**InstantiationAwareBeanPostProcessor**接口，会在**resolveBeforeInstantiation**里面被调用后置处理器，将创建对象权力交给用户，如果我们自己创建了对象返回，Spring就不会在执行**doCreateBean(beanName,mbdToUse,args)**，代码如下：
+
+```java
+@Override
+protected Object createBean(String beanName, RootBeanDefinition mbd, @Nullable Object[] args)
+    throws BeanCreationException {
+    // ...
+    try {
+        // Give BeanPostProcessors a chance to return a proxy instead of the target bean instance.
+        Object bean = resolveBeforeInstantiation(beanName, mbdToUse);
+        if (bean != null) {
+            return bean;
+        }
+    }
+    catch (Throwable ex) {
+        throw new BeanCreationException(mbdToUse.getResourceDescription(), beanName,
+                                        "BeanPostProcessor before instantiation of bean failed", ex);
+    }
+
+    try {
+        Object beanInstance = doCreateBean(beanName, mbdToUse, args);
+        if (logger.isTraceEnabled()) {
+            logger.trace("Finished creating instance of bean '" + beanName + "'");
+        }
+        return beanInstance;
+    }
+    // ...
+}
+```
+
+
 
 ### InitializingBean
 
@@ -441,6 +602,8 @@ Bean组件初始化以后对组件进行后续设置（在于额外处理）因�
 
 ```java
 public interface InitializingBean {
+    // initializeBean中执行，在BeanPostProcessor的两个方法中间执行
+    // 可以在当前组件所有的属性全部就绪后，继续进行增强
 	void afterPropertiesSet() throws Exception;
 }
 ```
