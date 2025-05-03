@@ -609,3 +609,173 @@ public interface InitializingBean {
 ```
 
 上面的**AutowiredAnnotationBeanPostProcessor**就是如此，注解版属性注入就是通过这个接口。
+
+### Spring容器的启动流程-容器对象的基本创建
+
+**new AnnotationConfigApplicationContext(MainConfig.class)**
+
+![image-20250502173517463](images/image-20250502173517463.png)
+
+#### this();
+
+**this.reader = new AnnotatedBeanDefinitionReader(this)；**reader读取**beanDefinitionAnnotatedBeanDefinitionReader**后续就是为了加载底层功能组件的后置处理器；里面的**registerAnnotationConfigProcessors(registry, null)；registerAnnotationConfigProcessors**注册很多的处理器。给工厂中注册核心组件
+
+```java
+public static Set<BeanDefinitionHolder> registerAnnotationConfigProcessors(
+			BeanDefinitionRegistry registry, @Nullable Object source) {
+
+		DefaultListableBeanFactory beanFactory = unwrapDefaultListableBeanFactory(registry);
+		if (beanFactory != null) {
+			if (!(beanFactory.getDependencyComparator() instanceof AnnotationAwareOrderComparator)) {
+				beanFactory.setDependencyComparator(AnnotationAwareOrderComparator.INSTANCE);
+			}
+			if (!(beanFactory.getAutowireCandidateResolver() instanceof ContextAnnotationAutowireCandidateResolver)) {
+				beanFactory.setAutowireCandidateResolver(new ContextAnnotationAutowireCandidateResolver());
+			}
+		}
+
+		Set<BeanDefinitionHolder> beanDefs = new LinkedHashSet<>(8);
+
+		if (!registry.containsBeanDefinition(CONFIGURATION_ANNOTATION_PROCESSOR_BEAN_NAME)) {
+			RootBeanDefinition def = new RootBeanDefinition(ConfigurationClassPostProcessor.class);
+			def.setSource(source);
+			beanDefs.add(registerPostProcessor(registry, def, CONFIGURATION_ANNOTATION_PROCESSOR_BEAN_NAME));
+		}
+
+		if (!registry.containsBeanDefinition(AUTOWIRED_ANNOTATION_PROCESSOR_BEAN_NAME)) {
+			RootBeanDefinition def = new RootBeanDefinition(AutowiredAnnotationBeanPostProcessor.class);
+			def.setSource(source);
+			beanDefs.add(registerPostProcessor(registry, def, AUTOWIRED_ANNOTATION_PROCESSOR_BEAN_NAME));
+		}
+
+		// Check for JSR-250 support, and if present add the CommonAnnotationBeanPostProcessor.
+		if (jsr250Present && !registry.containsBeanDefinition(COMMON_ANNOTATION_PROCESSOR_BEAN_NAME)) {
+			RootBeanDefinition def = new RootBeanDefinition(CommonAnnotationBeanPostProcessor.class);
+			def.setSource(source);
+			beanDefs.add(registerPostProcessor(registry, def, COMMON_ANNOTATION_PROCESSOR_BEAN_NAME));
+		}
+
+		// Check for JPA support, and if present add the PersistenceAnnotationBeanPostProcessor.
+		if (jpaPresent && !registry.containsBeanDefinition(PERSISTENCE_ANNOTATION_PROCESSOR_BEAN_NAME)) {
+			RootBeanDefinition def = new RootBeanDefinition();
+			try {
+				def.setBeanClass(ClassUtils.forName(PERSISTENCE_ANNOTATION_PROCESSOR_CLASS_NAME,
+						AnnotationConfigUtils.class.getClassLoader()));
+			}
+			catch (ClassNotFoundException ex) {
+				throw new IllegalStateException(
+						"Cannot load optional framework class: " + PERSISTENCE_ANNOTATION_PROCESSOR_CLASS_NAME, ex);
+			}
+			def.setSource(source);
+			beanDefs.add(registerPostProcessor(registry, def, PERSISTENCE_ANNOTATION_PROCESSOR_BEAN_NAME));
+		}
+
+		if (!registry.containsBeanDefinition(EVENT_LISTENER_PROCESSOR_BEAN_NAME)) {
+			RootBeanDefinition def = new RootBeanDefinition(EventListenerMethodProcessor.class);
+			def.setSource(source);
+			beanDefs.add(registerPostProcessor(registry, def, EVENT_LISTENER_PROCESSOR_BEAN_NAME));
+		}
+
+		if (!registry.containsBeanDefinition(EVENT_LISTENER_FACTORY_BEAN_NAME)) {
+			RootBeanDefinition def = new RootBeanDefinition(DefaultEventListenerFactory.class);
+			def.setSource(source);
+			beanDefs.add(registerPostProcessor(registry, def, EVENT_LISTENER_FACTORY_BEAN_NAME));
+		}
+
+		return beanDefs;
+	}
+```
+
+>ConfigurationClassPostProcessor.class(BeanFactoryPostProcessor) 处理配置类
+>AutowiredAnnotationBeanPostProcessor.class(SmartInstantiationAwareBeanPostProcessor) 自动装配功能
+>CommonAnnotationBeanPostProcessor.class(InstantiationAwareBeanPostProcessor)普通JSR250注解处理
+>EventListenerMethodProcessor.class(BeanFactoryPostProcessor)事件功能
+>DefaultEventListenerFactory.class 事件工厂
+
+**this.scanner = new ClassPathBeanDefinitionScanner(this);** scanner扫描需要导入的所有的bean信息**ClassPathBeanDefinitionScanner**，准备环境变量等一些信息
+
+#### register(componentClasses);
+
+register(componentClasses);注册所有的主配置类，拿到主配置类的BeanDefinition创建出来的信息，AnnotationConfigUtils.processCommonDefinitionAnnotations(abd);完善主配置类的配置信息，把主配置类信息注册到beanDefinitionMap里面
+
+### refresh()
+
+#### prepareRefresh();
+
+准备上下文环境
+
+![image-20250503162813423](images/image-20250503162813423.png)
+
+#### ConfigurableListableBeanFactory beanFactory = obtainFreshBeanFactory();
+
+初始化Bean工厂 不同的工厂不同实现，里面含xml解析逻辑
+
+**xml逻辑**
+
+![image-20250503162932853](images/image-20250503162932853.png)
+
+**注解逻辑，注解是在构造器的时候就创建了beanFactory，这时候直接返回**
+
+![image-20250503162952328](images/image-20250503162952328.png)
+
+#### prepareBeanFactory(beanFactory);
+
+对工厂进行填充属性，给工厂里面设置好必要的工具；比如：el表达式解析器，资源解析器，基本的后置处理器、还注册了一些单实例Bean以下的东西都能自动注册进自己的组件中Environment、Properties
+
+#### postProcessBeanFactory(beanFactory);
+
+空实现，留个子类去实现该接口                                
+
+#### invokeBeanFactoryPostProcessors(beanFactory);
+
+调用我们的bean工厂的后置处理器，基于注解版会调用**ConfigurationClassPostProcessor**解析配置类的后置处理器在此工作，所有的功能的配置和开启都在配置类，如果有其他**BeanFactroyPostProcessor**会继续执行。**ConfigurationClassPostProcessor**没有执行前**singletonObjects**工厂很简单，只有前面步骤注册的简单组件和第一步注册的一些Bean定义信息
+
+![image-20250503163645617](images/image-20250503163645617.png)
+
+在执行**ConfigurationClassPostProcessor**的**ConfigurationClassPostProcessor**
+
+- 拿到工厂中所有Bean定义信息
+- 找到真正的配置类
+- 使用**parser.parse(candidates);**进行配置类解析
+- 解析@ComponentScan、@Component、@Import、@ImportResource...等注解，封装成BeanDefinition放入BeanDefinitionMap中
+
+![image-20250503164756894](images/image-20250503164756894.png)
+
+### 循环依赖
+
+关键就是提前**暴露未完全创建完毕的Bean**，在Spring中主要使用了**三级缓存**来解决循环依赖：
+
+- 一级缓存（Singleton Objects Map）：用于存储完全初始化完成的单例Bean。
+- 二级缓存（Early Singleton Objects Map）：用于存储尚未完全初始化，但已实例化的Bean，用于提前暴露对象，避免循环依赖问题。
+- 三级缓存（Singleton Factories Map）：用于存储对象工厂，当需要时，可以通过工厂创建早期Bean（特别是为了支持AOP代理对象的创建）。
+
+解决步骤：首先Spring创建Bean实例，并将其加入三级缓存中（Factory）。当一个Bean依赖另一个未初始化Bean时，Spring会从三级缓存中获取Bean的工厂，并生成该Bean的对象（若有代理则是代理对象）代理对象存入二级缓存，解决循环依赖，一旦所有的Bean被完全初始化，Bean将转移到一级缓存中。
+
+**解决循环依赖全流程**
+
+1. 首先获取单例Bean的时候会通过BeanName先去singletonObjects（一级缓存）查找完整的Bean，如果找到则直接返回，否则进行步骤2。
+2. 看对应的Bean是否在创建中，如果不在直接返回null，如果是则回去earlySingletonObjects（二级缓存）查找Bean，如果找到则返回，否则进行步骤3
+3. 去singletonFactories（三级缓存）通过BeanName查找对应的工厂，如果存着工厂则通过工厂创建Bean，并且放到earlySingletonObjects中。
+4. 如果三个缓存都没找到，则返回null
+
+从上面步骤看出，如果查询发现Bean还未创建，到第二部就直接返回null，不回继续查二级和三级缓存。返回null之后，说明这个Bean还未创建，这个时候会标记这个Bean正在创建中，然后再调用createBean来创建Bean，而实际创建是调用方法doCreateBean。doCreateBean这个方法就会执行三个步骤：实例化、属性注入、初始化。**在实例化Bean之后，会往singletonFactories塞入一个工厂，而调用这个工厂的getObject发给发，就能得到这个Bean**
+
+```java
+addSingletonFactory(beanName,() -> getEarlyBeanReference(beanName,mbd,bean));
+```
+
+注意：此时Spring是不知道会不会有循环依赖发生的，但是它不管，反正往singletonFactories塞这个工厂，这里就是提前暴露。
+
+然后就开始执行属性注入，这个时候A发现需要注入B，所以去getBean(B)，此时又会走一边上面描述的逻辑，到了B的属性注入这一步。
+
+此时B调用getBean(A)，这时候一级缓存里面找不到，但是发现A正在创建中的，于是就从二级缓存中找，发现没找到，于是就从三级缓存中找，调用getObject就找到了。
+
+并且通过上面提前暴露在三级缓存里暴露的工厂得到A，然后将这个工厂从三级缓存里伤处，并将A加入二级缓存中。
+
+然后结果就是B属性注入成功。
+
+紧接着B嗲用initializeBean初始化，追钟返回，此时B已经被加到了一级缓存。
+
+这时候就回到A的属性注入，此时注入B，接着执行初始化，最后A也会被加入到一级缓存里，且从二级换中删除A。Spring解决循环依赖就是按照上面所述的逻辑来实现的。
+
+重点就是在对象实例化之后，都会在三级缓存里加入一个工厂，提前对外暴露还未完整的Bean，这样如果被循环依赖了，对方就可以利用这个工厂得到一个不完整的Bean，破环了循环的条件。
