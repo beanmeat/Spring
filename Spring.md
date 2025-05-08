@@ -779,3 +779,84 @@ addSingletonFactory(beanName,() -> getEarlyBeanReference(beanName,mbd,bean));
 这时候就回到A的属性注入，此时注入B，接着执行初始化，最后A也会被加入到一级缓存里，且从二级换中删除A。Spring解决循环依赖就是按照上面所述的逻辑来实现的。
 
 重点就是在对象实例化之后，都会在三级缓存里加入一个工厂，提前对外暴露还未完整的Bean，这样如果被循环依赖了，对方就可以利用这个工厂得到一个不完整的Bean，破环了循环的条件。
+
+### AOP
+
+每一个功能的开启，要么写配置，要么注解。@EnableXXX开启XXX功能的注解。
+
+```java
+@Configuration
+@EnableAspectJAutoProxy // 开启基于注解的AOP
+public class AopOpenConfig {
+}
+```
+
+![image-20250508134247190](images/image-20250508134247190.png)
+
+**@EnableAspectJAutoProxy** 通过**@Import**导入了**AspectJAutoProxyRegistrar**
+
+![image-20250508134507614](images/image-20250508134507614.png)
+
+给容器中加入了**AspectJAutoProxyRegistrar**，实现了**ImportBeanDefinitionRegistrar**想BeanDefinitionRegistry注册一些东西，之后再refresh()中的invokeBeanFactoryPostProcessors(beanFactory);调用后置处理器，实例化Bean工厂的后置处理器，AspectJAutoProxyRegistrar就实例化了，从而会向registry也就是DefaultListableBeanFactory中加入BeanDefinition（就是向BeanDefinitionMap中添加BeanDefinition）**org.springframework.aop.config.internalAutoProxyCreator**
+
+![image-20250508144046232](images/image-20250508144046232.png)
+
+**AnnotationAwareAspectJAutoProxyCreator**
+
+![image-20250508144512684](images/image-20250508144512684.png)
+
+注册进来的是组件是一个BeanPostProcessor实现类，Bean的后置处理器，所以再Bean工厂增强的环节不回运行，但是再Bean组件创建环节（getBean）会干预到，也就是对组件进行功能增强。目前只是加载了BeanDefinitionMap中，还没有被实例化。
+
+BeanPostProcessor统一实例化的步骤在registerBeanPostProcessors(beanFactory);而且它实现了**Ordered**接口，会首先会被创建，正常的走getBean() => doGetBean() => createBean() => doCreateBean()来创建AnnotationAwareAspectJAutoProxyCreator对象。
+
+在initializeBean，初始化的时候，因为实现了BeanFactoryAware接口，会在这时候调用该回调，从而调用它本身的setBeanFactory()方法
+
+![image-20250508171133525](images/image-20250508171133525.png)
+
+AnnotationAwareAspectJAutoProxyCreator对象在初始化期间initializeBean准备好了其需要的基本信息
+
+```java
+protected void initBeanFactory(ConfigurableListableBeanFactory beanFactory) {
+    // 给AnnotationAwareAspectJAutoProxyCreator对象里面的值进行赋值
+    this.advisorRetrievalHelper = new BeanFactoryAdvisorRetrievalHelperAdapter(beanFactory);
+}
+```
+
+>继承Order接口，是想让它在registerProcessor中第一个被创建对象，然后在后面每一次创建对象的时候都会生效，进行增强，不仅后面单实例bean创建时候会被调用，而且如果registerProcessor中还有自定义的PostProcessor待创建也会被调用。
+>
+>因为该接口还是实现了InstantiationAwareBeanPostProcessor接口，这个接口在createBean中的doCreateBean之前会被干预到
+
+```java
+@Override
+	public Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName) {
+		Object cacheKey = getCacheKey(beanClass, beanName);
+
+		if (!StringUtils.hasLength(beanName) || !this.targetSourcedBeans.contains(beanName)) {
+			// advisedBean不需要增强
+			if (this.advisedBeans.containsKey(cacheKey)) {
+				return null;
+			}
+			// 是不是基础的bean 是不是需要跳过的 重复判断
+			if (isInfrastructureClass(beanClass) || shouldSkip(beanClass, beanName)) {
+				this.advisedBeans.put(cacheKey, Boolean.FALSE);
+				return null;
+			}
+		}
+
+		TargetSource targetSource = getCustomTargetSource(beanClass, beanName);
+		if (targetSource != null) {
+			if (StringUtils.hasLength(beanName)) {
+				this.targetSourcedBeans.add(beanName);
+			}
+			Object[] specificInterceptors = getAdvicesAndAdvisorsForBean(beanClass, beanName, targetSource);
+			Object proxy = createProxy(beanClass, beanName, specificInterceptors, targetSource);
+			this.proxyTypes.put(cacheKey, proxy.getClass());
+			return proxy;
+		}
+
+		return null;
+	}
+```
+
+因为实现了BeanPostProcessor，所以在对象创建之前和之后都会被干涉，**shouldSkip(beanClass, beanName)**其中第一次干涉的时候会获取增强器和切面，放入缓存，避免后续重复遍历获取增强器和切面。
+
