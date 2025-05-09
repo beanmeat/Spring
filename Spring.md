@@ -858,5 +858,14 @@ protected void initBeanFactory(ConfigurableListableBeanFactory beanFactory) {
 	}
 ```
 
-因为实现了BeanPostProcessor，所以在对象创建之前和之后都会被干涉，**shouldSkip(beanClass, beanName)**其中第一次干涉的时候会获取增强器和切面，放入缓存，避免后续重复遍历获取增强器和切面。
+因为实现了BeanPostProcessor，所以在对象创建之前就会被干涉，**shouldSkip(beanClass, beanName)**其中第一次干涉的时候会获取增强器和切面，放入缓存，避免后续重复遍历获取增强器和切面。
 
+最后在Bean的实例化finishBeanFactoryInitialization(beanFactory);实例化Bean的时候，会将每一个Bean的初始化之后被干涉，**initializeBean**
+
+![image-20250509105936466](images/image-20250509105936466.png)
+
+在里面会获取所增强器与bean实例进行匹配，如果匹配上了，说明这个bean需要增强，就会对这个bean进行动态代理，创建代理对象。
+
+![image-20250509111212413](images/image-20250509111212413.png)
+
+有了对象，就可以调用方法，底层使用的CGLIB动态代理，在调用sayHello方法时候会将增强器转换成拦截器，执行时候会判断拦截器是否为空，如果为空则直接执行，**retVal = methodProxy.invoke(target, argsToUse);**否则的话，就开始递归调用（责任链模式） **new CglibMethodInvocation(proxy, target, method, args, targetClass, chain, methodProxy).proceed();**
