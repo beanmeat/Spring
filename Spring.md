@@ -93,7 +93,7 @@ public static void registerBeanDefinition(
 
 ### Aware接口以及调用逻辑
 
-Spring给我们暴露了很多Aware接口，这些接口通常以Aware结尾，表示Bean能够感知某些特定的Spring容器功能。
+Spring给我们暴露了很多Aware接口，这些接口通常以Aware结尾，表示Bean能够感知某些特定的Spring容器功能;
 
 ```java
 /**
