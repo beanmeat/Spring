@@ -193,7 +193,7 @@ private void invokeAwareMethods(String beanName, Object bean) {
 }
 ```
 
-下面这几个Aware接口是通过扩展点的方式**ApplicationContextAwareProcessor**进行回调
+下面这几个Aware接口是通过扩展点的方式**ApplicationContextAwareProcessor**进行回调;
 
 - EnvironmentAware
 - EmbeddedValueResolverAware
