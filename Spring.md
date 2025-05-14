@@ -782,6 +782,8 @@ addSingletonFactory(beanName,() -> getEarlyBeanReference(beanName,mbd,bean));
 
 ### AOP
 
+#### 初始化流程
+
 每一个功能的开启，要么写配置，要么注解。@EnableXXX开启XXX功能的注解。
 
 ```java
@@ -797,7 +799,7 @@ public class AopOpenConfig {
 
 ![image-20250508134507614](images/image-20250508134507614.png)
 
-给容器中加入了**AspectJAutoProxyRegistrar**，实现了**ImportBeanDefinitionRegistrar**想BeanDefinitionRegistry注册一些东西，之后再refresh()中的invokeBeanFactoryPostProcessors(beanFactory);调用后置处理器，实例化Bean工厂的后置处理器，AspectJAutoProxyRegistrar就实例化了，从而会向registry也就是DefaultListableBeanFactory中加入BeanDefinition（就是向BeanDefinitionMap中添加BeanDefinition）**org.springframework.aop.config.internalAutoProxyCreator**
+给容器中加入了**AspectJAutoProxyRegistrar**，实现了**ImportBeanDefinitionRegistrar**向BeanDefinitionRegistry注册一些东西，之后再refresh()中的invokeBeanFactoryPostProcessors(beanFactory);调用后置处理器，实例化Bean工厂的后置处理器，AspectJAutoProxyRegistrar就实例化了，从而会向registry也就是DefaultListableBeanFactory中加入BeanDefinition（就是向BeanDefinitionMap中添加BeanDefinition）**org.springframework.aop.config.internalAutoProxyCreator**
 
 ![image-20250508144046232](images/image-20250508144046232.png)
 
@@ -805,7 +807,7 @@ public class AopOpenConfig {
 
 ![image-20250508144512684](images/image-20250508144512684.png)
 
-注册进来的是组件是一个BeanPostProcessor实现类，Bean的后置处理器，所以再Bean工厂增强的环节不回运行，但是再Bean组件创建环节（getBean）会干预到，也就是对组件进行功能增强。目前只是加载了BeanDefinitionMap中，还没有被实例化。
+注册进来的是组件是一个BeanPostProcessor实现类，Bean的后置处理器，所以再Bean工厂增强的环节不会运行，但是再Bean组件创建环节（getBean）会干预到，也就是对组件进行功能增强。目前只是加载了BeanDefinitionMap中，还没有被实例化。
 
 BeanPostProcessor统一实例化的步骤在registerBeanPostProcessors(beanFactory);而且它实现了**Ordered**接口，会首先会被创建，正常的走getBean() => doGetBean() => createBean() => doCreateBean()来创建AnnotationAwareAspectJAutoProxyCreator对象。
 
@@ -860,6 +862,18 @@ protected void initBeanFactory(ConfigurableListableBeanFactory beanFactory) {
 
 因为实现了BeanPostProcessor，所以在对象创建之前就会被干涉，**shouldSkip(beanClass, beanName)**其中第一次干涉的时候会获取增强器和切面，放入缓存，避免后续重复遍历获取增强器和切面。
 
+![image-20250514142345774](images/AOP初始化.png)
+
+>说明：
+>
+>1. 创建AnnotationConfigApplicationContext()容器
+>2. 在invokeBeanFactoryPostProcessors()中，会调用 ConfigurationClassPostProcessor 的 postProcessBeanDefinitionRegistry() 。在此方法中，会找到 @EnableAspectJAutoProxy 的 @Import 属性传入的 AspectJAutoProxyRegistrar.class 类。并且执行该类的registerBeanDefinitions() 方法，创建类型为 AnnotationAwareAspectJAutoProxyCreator 、名称为org.springframework.aop.
+>   config.internalAutoProxyCreator的 RootBeanDefinition注册到BeanDefinitionRegistry中。
+>3. 在 registerBeanPostProcessors() 中会根据上面一步生成的 RootBeanDefinition对象创建 AnnotationAwareAspectJAutoProxyCreator 的实例。
+>4. 在 finishBeanFactoryInitialization() 中第一次执行到 AbstractAutowireCapableBeanFactory.createBean() 时，postProcessBeforeInstantiation方法会缓存所有的advisor，方法的最后返回 null。至此整个 SpringAOP的初始化完成。
+
+#### 创建动态代理
+
 最后在Bean的实例化finishBeanFactoryInitialization(beanFactory);实例化Bean的时候，会将每一个Bean的初始化之后被干涉，**initializeBean**
 
 ![image-20250509105936466](images/image-20250509105936466.png)
@@ -869,3 +883,26 @@ protected void initBeanFactory(ConfigurableListableBeanFactory beanFactory) {
 ![image-20250509111212413](images/image-20250509111212413.png)
 
 有了对象，就可以调用方法，底层使用的CGLIB动态代理，在调用sayHello方法时候会将增强器转换成拦截器，执行时候会判断拦截器是否为空，如果为空则直接执行，**retVal = methodProxy.invoke(target, argsToUse);**否则的话，就开始递归调用（责任链模式） **new CglibMethodInvocation(proxy, target, method, args, targetClass, chain, methodProxy).proceed();**
+
+![image-20250514143236105](images/image-20250514143236105.png)
+
+>*ExposeInvocationInterceptor*
+>
+>Around
+>
+>Before
+>
+>After
+>
+>AfterReturning
+>
+>AfterThrowing
+
+创建动态代理有两种方法，一种是 JDK ，一种是 CGLib 。
+
+1.如果目标类有实现接口的话，则是使用JDK的方式生成代理对象。
+
+2.配置了使用Cglib进行动态代理或者目标类没有实现接口,那么使用Cglib的方式创建代理对象。
+
+#### 调用动态代理
+
