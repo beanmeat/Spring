@@ -868,7 +868,7 @@ protected void initBeanFactory(ConfigurableListableBeanFactory beanFactory) {
 >
 >1. 创建AnnotationConfigApplicationContext()容器
 >2. 在invokeBeanFactoryPostProcessors()中，会调用 ConfigurationClassPostProcessor 的 postProcessBeanDefinitionRegistry() 。在此方法中，会找到 @EnableAspectJAutoProxy 的 @Import 属性传入的 AspectJAutoProxyRegistrar.class 类。并且执行该类的registerBeanDefinitions() 方法，创建类型为 AnnotationAwareAspectJAutoProxyCreator 、名称为org.springframework.aop.
->   config.internalAutoProxyCreator的 RootBeanDefinition注册到BeanDefinitionRegistry中。
+>     config.internalAutoProxyCreator的 RootBeanDefinition注册到BeanDefinitionRegistry中。
 >3. 在 registerBeanPostProcessors() 中会根据上面一步生成的 RootBeanDefinition对象创建 AnnotationAwareAspectJAutoProxyCreator 的实例。
 >4. 在 finishBeanFactoryInitialization() 中第一次执行到 AbstractAutowireCapableBeanFactory.createBean() 时，postProcessBeforeInstantiation方法会缓存所有的advisor，方法的最后返回 null。至此整个 SpringAOP的初始化完成。
 
@@ -906,3 +906,144 @@ protected void initBeanFactory(ConfigurableListableBeanFactory beanFactory) {
 
 #### 调用动态代理
 
+![image-20250515114750280](images/image-20250515114750280.png)
+
+### 事件
+
+https://download.csdn.net/blog/column/10901984/128266563
+
+#### 基于注解的实现原理
+
+![image-20250515142452015](images/image-20250515142452015.png)
+
+容器初始化会设置两个创世纪的类，注解的实现原理依赖EventListenerMethodProcessor和DefaultEventListenerFactory的能力；
+
+![image-20250515142642017](images/image-20250515142642017.png)
+
+从类的继承关系分析：EventListenerMethodProcessor是SmartInitializingSingleton和BeanFactroyPostProcessor接口实现类；
+
+- 在容器启动之初调用BeanFactoryPostProcessor的postProcessBeanFactory接口；
+- 在所有的Bean初始化之后执行SmartInitializingSingleton的afterSingletonslnstantiated接口；
+
+容器启动之初，调用**postProcessbeanFactory**方法：
+
+![image-20250515143435470](images/image-20250515143435470.png)
+
+该部分核心逻辑是初始化EventListenerFactory工厂，默认为DefaultEventListenerFactory。一半业务侧并不会实现EventListenerFactory，既postProcessBeanFactory可以理解为从IOC容器中获取DefaultEventListenerFactory对象并复制给eventListenerFactories；
+
+> **getBeansOfType**方法会根据类型查询BeanName，然后getBean创建对象
+
+**在所有的Bean初始化完成后执行SmartInitializingSingleton的afterSingletonsInstantiated接口:**
+
+```java
+@Override
+public void afterSingletonsInstantiated() {
+    ConfigurableListableBeanFactory beanFactory = this.beanFactory;
+    String[] beanNames = beanFactory.getBeanNamesForType(Object.class);
+    for (String beanName : beanNames) {
+        if (!ScopedProxyUtils.isScopedTarget(beanName)) {
+            Class<?> type = null;
+            try {
+                type = AutoProxyUtils.determineTargetClass(beanFactory, beanName);
+            }
+            // ...
+            if (type != null) {
+                if (ScopedObject.class.isAssignableFrom(type)) {
+                    try {
+                        Class<?> targetClass = AutoProxyUtils.determineTargetClass(
+                            beanFactory, ScopedProxyUtils.getTargetBeanName(beanName));
+                        if (targetClass != null) {
+                            type = targetClass;
+                        }
+                    }
+                    // ...
+                }
+                try {
+                    // 上面是对IOC容器中获取所有Bean对象，调用processBean(beanName,type)
+                    processBean(beanName, type);
+                }
+                // ...
+            }
+        }
+    }
+}
+
+```
+
+![image-20250515145049620](images/image-20250515145049620.png)
+
+调用`MethodIntrospector.selectMethods`接口遍历指定类型的所有方法，对于每个方法根据`AnnotatedElementUtils.findMergedAnnotation(method, EventListener.class)` 获得@EventListener注解合并的属性值(@EventListener不允许重复注解)。接口返回Map<Method, EventListener>类型的annotatedMethods集合对象，其中key为方法对象，value为注解在方法上的@EventListener解析生成的对象。
+
+如果annotatedMethods为空表明该类中没有方法被@EventListener注解直接返回；否则遍历annotatedMethods对象，并通过DefaultEventListenerFactory针对每个被注解的方法生成一个ApplicationListenerMethodAdapter类型的ApplicationListener事件监听器，在初始化后注册到Spring容器：
+
+![image-20250515145349574](images/image-20250515145349574.png)
+
+![image-20250515145811289](images/image-20250515145811289.png)
+
+上述代码`context.addApplicationListener(applicationListener);`发生在所有非Lazy单例Bean被初始化后，即applicationEventMulticaster已在`initApplicationEventMulticaster()`步骤被初始化过—不为空：此时同时向事件广播器进行了注册。
+
+**事件发布器**
+
+Spring容器提供的时间发布器接口如下所示：
+
+```java
+@FunctionalInterface
+public interface ApplicationEventPublisher {
+	default void publishEvent(ApplicationEvent event) {
+		publishEvent((Object) event);
+	}
+    // 核心方法
+	void publishEvent(Object event);
+}
+```
+
+AbstractApplicationContext对ApplicationEventPublisher接口提供了实现：
+
+```java
+// 跟进protected void publishEvent(Object event, @Nullable ResolvableType eventType)：
+protected void publishEvent(Object event, @Nullable ResolvableType eventType) {
+    Assert.notNull(event, "Event must not be null");
+
+    // Decorate event as an ApplicationEvent if necessary
+    ApplicationEvent applicationEvent;
+    if (event instanceof ApplicationEvent) {
+        applicationEvent = (ApplicationEvent) event;
+    }
+    else {
+        applicationEvent = new PayloadApplicationEvent<>(this, event);
+        if (eventType == null) {
+            eventType = ((PayloadApplicationEvent<?>) applicationEvent).getResolvableType();
+        }
+    }
+
+    // Multicast right now if possible - or lazily once the multicaster is initialized
+    if (this.earlyApplicationEvents != null) {
+        this.earlyApplicationEvents.add(applicationEvent);
+    }
+    else {
+        getApplicationEventMulticaster().multicastEvent(applicationEvent, eventType);
+    }
+
+    // Publish event via parent context as well...
+    if (this.parent != null) {
+        if (this.parent instanceof AbstractApplicationContext) {
+            ((AbstractApplicationContext) this.parent).publishEvent(event, eventType);
+        }
+        else {
+            this.parent.publishEvent(event);
+        }
+    }
+}
+```
+
+![image-20250515150932237](images/image-20250515150932237.png)
+
+方法的主线逻辑较为清晰：
+
+- 如果入参event的类型不是ApplicationEvent，使用PayloadApplicationEvent进行封装；
+- 如果applicationEventMulticaster属性获取事件广播器，并调用广播事件接口；
+- 如果Spring容器的父容器不为空，调用父容器的事件发布接口进行事件发布；
+
+### SPI
+
+ServiceLoader：load()指定一个接口；会加载当前系统里面所有的这个接口的【指定实现】
