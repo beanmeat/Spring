@@ -2,7 +2,7 @@
 
 ### DefaultListableBeanFactory
 
-Spring 的ConfigurableListableBeanFactory和BeanDefinitionRegistry接口的默认实现：一个基于 Bean 定义元数据的成熟 Bean 工厂，可通过后处理器进行扩展。BeanFactory的实现有很多，这个可以存放很多bean的一些元数据。
+Spring 的ConfigurableListableBeanFactory和BeanDefinitionRegistry接口的默认实现：一个基于 Bean 定义元数据的成熟 Bean 工厂，可通过后处理器进行扩展。BeanFactory的实现有很多，这个可以存放很多bean的一些元数据信息。
 
 ![image-20250426150024766](images/image-20250426150024766.png)
 
