@@ -12,7 +12,7 @@ public class BeanmeatConfig {
 
     @Bean
     public Beanmeat beanmeat() {
-        return new Beanmeat("1","beanmeat","tchstart");
+        return new Beanmeat("1","beanmeat",19);
     }
 
     @Bean(initMethod = "initMethod", destroyMethod = "destroyMethod")

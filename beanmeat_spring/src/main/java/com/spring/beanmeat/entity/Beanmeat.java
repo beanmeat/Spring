@@ -18,5 +18,5 @@ public class Beanmeat {
 
     private String name;
 
-    private String alise;
+    private Integer age;
 }

@@ -10,5 +10,9 @@ public class Evaluation {
         Expression expression = spelExpressionParser.parseExpression("'hello world'");
         String message = expression.getValue(String.class);
         System.out.println(message);
+
+        Expression exp = spelExpressionParser.parseExpression("'Hello World'.bytes.length");
+        int length = (Integer) exp.getValue();
+        System.out.println(length);
     }
 }
