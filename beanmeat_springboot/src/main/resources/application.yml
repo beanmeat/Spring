@@ -1,0 +1,5 @@
+spring:
+  application:
+    name: beanmeat_springboot
+  main:
+    allow-circular-references: true
