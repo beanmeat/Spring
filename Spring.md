@@ -1,4 +1,4 @@
-## Spring
+## Spring Framwork
 
 ### DefaultListableBeanFactory
 
@@ -91,7 +91,7 @@ public static void registerBeanDefinition(
 }
 ```
 
-### Aware接口以及调用逻辑
+### Interface Aware
 
 Spring给我们暴露了很多Aware接口，这些接口通常以Aware结尾，表示Bean能够感知某些特定的Spring容器功能;
 
@@ -248,7 +248,7 @@ private void invokeAwareInterfaces(Object bean) {
 
 ```
 
-### populateBean (XML/注解)
+### populateBean
 
 在实例化对象中**finishBeanFactoryInitialization(beanFactory);**中里面会会对对象进行通过反射创建对象，实例化对象之后，此时对象只是创建了，但里面的值都还是为空，此时会调用**populateBean**进行属性赋值（XML、注解）两种方式都是在这个方法继续赋值。另外这个方法跟**refresh**方法一样。XML形式的属性赋值时耦合在方法中的，但是注解的方式也是通过**BeanPostProcessor**扩展点的方式进行属性赋值的。
 
@@ -730,7 +730,7 @@ public class ReferenceAnnotationBeanPostProcessor
 
 BeanFactoryPostProcessor是对BeanFactory
 
-### Spring容器的启动流程-容器对象的基本创建
+### Spring process start
 
 **new AnnotationConfigApplicationContext(MainConfig.class)**
 
@@ -861,7 +861,7 @@ register(componentClasses);注册所有的主配置类，拿到主配置类的Be
 
 ![image-20250503164756894](images/image-20250503164756894.png)
 
-### 循环依赖
+### Cyclic dependency
 
 关键就是提前**暴露未完全创建完毕的Bean**，在Spring中主要使用了**三级缓存**来解决循环依赖：
 
@@ -900,7 +900,7 @@ addSingletonFactory(beanName,() -> getEarlyBeanReference(beanName,mbd,bean));
 
 重点就是在对象实例化之后，都会在三级缓存里加入一个工厂，提前对外暴露还未完整的Bean，这样如果被循环依赖了，对方就可以利用这个工厂得到一个不完整的Bean，破环了循环的条件。
 
-### AOP
+### Spring AOP
 
 #### 初始化流程
 
@@ -1028,7 +1028,7 @@ protected void initBeanFactory(ConfigurableListableBeanFactory beanFactory) {
 
 ![image-20250515114750280](images/image-20250515114750280.png)
 
-### 事件
+### Spring Event
 
 https://download.csdn.net/blog/column/10901984/128266563
 
@@ -1164,6 +1164,9 @@ protected void publishEvent(Object event, @Nullable ResolvableType eventType) {
 - 如果applicationEventMulticaster属性获取事件广播器，并调用广播事件接口；
 - 如果Spring容器的父容器不为空，调用父容器的事件发布接口进行事件发布；
 
-### SPI
+### Spring Statemachine
 
-ServiceLoader：load()指定一个接口；会加载当前系统里面所有的这个接口的【指定实现】
+https://spring.io/projects/spring-statemachine
+
+Spring Statemachine is a framework for application developers to use state machine concepts with Spring applications.
+
