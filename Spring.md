@@ -24,9 +24,11 @@ private volatile List<String> beanDefinitionNames = new ArrayList<>(256);
 
 Spring启动流程的逻辑都是将不同配置的方式去解析成统一的对象，然后统一解析完成后，交给BeanFactory去创建对象。但是注解，XML等不同的方式，是通过策略模式将他们统一解析成**BeanDefinition**，里面存储的就是一个个对象的"设计图"，**DefaultListableBeanFactory**就是用来去存储这些BeanDefinition对象的，以Map方式进行存储，所以不管是ClassPathXmlApplicationContext（基于Xml方式的加载方式）还是基于AnnotationConfigApplicationContext（基于注解的方式）都会通过**组合**的方式去去组合DefaultListableBeanFactory ；
 
-XML方式（ClassPathXmlApplicationContext）
-
+#### XML方式（ClassPathXmlApplicationContext）
+![ClassPathXmlApplicationContext](images/ClassPathXmlApplicationContext.png)
 ```java
+// AbstractApplicationContext
+
 @Override
 protected final void refreshBeanFactory() throws BeansException {
     if (hasBeanFactory()) {
