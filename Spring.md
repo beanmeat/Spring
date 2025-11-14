@@ -146,6 +146,33 @@ exposedObject = initializeBean(beanName, exposedObject, mbd);
 
 **initializeBean**的第一步就是调用**invokeAwareMethods(beanName,bean);**来对其中三个Aware接口进行回调，剩余的会通过**BeanProcessor**的扩展点方式进行回调；
 
+#### BeanNameAware
+
+```java
+if (bean instanceof BeanNameAware) {
+    ((BeanNameAware) bean).setBeanName(beanName);
+}
+```
+
+#### BeanClassLoaderAware
+
+```java
+if (bean instanceof BeanClassLoaderAware) {
+    ClassLoader bcl = getBeanClassLoader();
+    if (bcl != null) {
+        ((BeanClassLoaderAware) bean).setBeanClassLoader(bcl);
+    }
+}
+```
+
+#### BeanFactoryAware
+
+```java
+if (bean instanceof BeanFactoryAware) {
+    ((BeanFactoryAware) bean).setBeanFactory(AbstractAutowireCapableBeanFactory.this);
+}
+```
+
 **initializeBean**方法中会依次走到**applyBeanPostProcessorsBeforeInitialization**调用BeanProcessor接口的**postProcessBeforeInitialization**会调用**ApplicationContextAwareProcessor**里面会给Bean实例回调信息，前提是实现对应的Aware。
 
 ```java
@@ -176,34 +203,23 @@ protected Object initializeBean(String beanName, Object bean, @Nullable RootBean
 
 其中**BeanNameAware**，**BeanClassLoaderAware**，**BeanFactoryAware**三个接口时首先回调的。写死在代码中的，**initializeBean**的第一步。
 
-```java
-private void invokeAwareMethods(String beanName, Object bean) {
-    if (bean instanceof Aware) {
-        if (bean instanceof BeanNameAware beanNameAware) {
-            beanNameAware.setBeanName(beanName);
-        }
-        if (bean instanceof BeanClassLoaderAware beanClassLoaderAware) {
-            ClassLoader bcl = getBeanClassLoader();
-            if (bcl != null) {
-                beanClassLoaderAware.setBeanClassLoader(bcl);
-            }
-        }
-        if (bean instanceof BeanFactoryAware beanFactoryAware) {
-            beanFactoryAware.setBeanFactory(AbstractAutowireCapableBeanFactory.this);
-        }
-    }
-}
-```
-
 下面这几个Aware接口是通过扩展点的方式**ApplicationContextAwareProcessor**进行回调;
 
-- EnvironmentAware
-- EmbeddedValueResolverAware
-- ResourceLoaderAware
-- ApplicationEventPublisherAware
-- MessageSourceAware
-- ApplicationStartupAware
-- ApplicationContextAware
+#### EnvironmentAware
+
+#### EmbeddedValueResolverAware
+
+#### ResourceLoaderAware
+
+#### ResourceLoaderAware
+
+#### ApplicationEventPublisherAware
+
+#### MessageSourceAware
+
+#### ApplicationStartupAware
+
+#### ApplicationContextAware
 
 ```java
 // ApplicationContextAwareProcessor  通过BeanProcessor扩展点的方式进行回调
@@ -612,258 +628,7 @@ public interface InitializingBean {
 
 上面的**AutowiredAnnotationBeanPostProcessor**就是如此，注解版属性注入就是通过这个接口。
 
-### LifeCycle
-
-> 示例见代码
-
-#### InitializingBean, ApplicationContextAware, DisposableBean
-
-```java
-public class BeanmeatLifeCycle implements InitializingBean, ApplicationContextAware, DisposableBean {
-
-    Logger logger = Logger.getLogger(BeanmeatLifeCycle.class.getName());
-
-    @Autowired
-    private Beanmeat beanmeat;
-
-    public BeanmeatLifeCycle() {
-        System.out.println("BeanmeatLifeCycle Constructor");
-    }
-
-    @Override
-    public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
-        Beanmeat bean = applicationContext.getBean(Beanmeat.class);
-        System.out.println("BeanmeatLifeCycle implements ApplicationContextAware setApplicationContext; Beanmeat:" + bean);
-    }
-
-    @PostConstruct
-    public void postConstruct() {
-        System.out.println("BeanmeatLifeCycle Annotation PostConstruct");
-    }
-
-    @Override
-    public void afterPropertiesSet() throws Exception {
-        System.out.println("BeanmeatLifeCycle implements InitializingBean afterPropertiesSet");
-    }
-
-    public void initMethod() throws Exception {
-        System.out.println("BeanmeatLifeCycle initMethod");
-    }
-
-    @PreDestroy
-    public void preDestroy() throws Exception {
-        System.out.println("BeanmeatLifeCycle preDestroy");
-    }
-
-    @Override
-    public void destroy() throws Exception {
-        System.out.println("BeanmeatLifeCycle implements DisposableBean destroy");
-    }
-
-    public void destroyMethod() throws Exception {
-        System.out.println("BeanmeatLifeCycle destroyMethod");
-    }
-}
-```
-
-![image-20250530172104281](D:\project\Spring\image\image-20250530172104281.png)
-
-结果中可以看出，Bean在创建和销毁的过程当我们实现了某些接口或者加了某些注解，Spring就会回调我们实现的接口或执行的方法。同时在执行setApplicationContext的时候，能打印出Beanmeat对象，说明User已经被注入，说明注入发生在setApplicationContext之前。
-
-Bean创建和销毁过程中调用的顺序。
-
-![image-20250530172410319](D:\project\Spring\image\image-20250530172410319.png)
-
-红色部分发生在Bean的创建过程，灰色部分发生在Bean销毁的过程，在容器关闭的时候，就会销毁Bean。
-
-Aware接口是指以Aware结尾的一些Spring提供的接口，当你的Bean实现了这些接口的话，在创建过程中会回调对应的set方法，并传入响应的对象。
-
-这里列举几个Aware接口以及它们的作用
-
-| 接口                           | 作用                                    |
-| ------------------------------ | --------------------------------------- |
-| ApplicationContextAware        | 注入ApplicationContext                  |
-| ApplicationEventPublisherAware | 注入ApplicationEventPublisher事件发布器 |
-| BeanFactoryAware               | 注入BeanFactory                         |
-| BeanNameAware                  | 注入Bean的名称                          |
-
-有了这些回调，比如说我的Bean想拿到ApplicationContext，不仅可以通过@Autowired注入，还可以通过实现ApplicationContextAware接口拿到。
-
-#### BeanPostProcessor
-
-BeanPostProcessor，中文名 Bean的后置处理器，在Bean创建的过程中起作用。
-
-BeanPostProcessor是Bean在创建过程中的一个非常重要的扩展点，每个Bean在创建的各个阶段，都会回调BeanPostProcessor及子接口的方法，传入正在创建的Bean对象，这样如果相对Bean创建过程中某个阶段进行自定义扩展，那么就可以自定义BeanPostProcessor来完成；BeanPostProcessor就是在Bean创建过程中留的口子，通过这个口子可以对正在创建的Bean进行扩展。只不过Bean创建的阶段比较多，然后BeanPostProcessor接口以及他的子接口InstantiationAwareBeanPostProcessor/DestructionAwareBeanPostProcessor就提供了很多方法，可以使得在不同的阶段都可以拿到正在创建的Bean进行扩展；
-
-![image-20250530174353073](D:\project\Spring\image\image-20250530174353073.png)
-
-![image-20250530174408043](D:\project\Spring\image\image-20250530174408043.png)
-
-可以看出每个生成的Bean在执行某个阶段的时候，都会回调BeanmeatPostProcessor，然后BeanmeatPostProcessor就会判断当前创建Bean的类型，如果Beanmeat类型，就会将name更改；
-
-##### Spring内置的BeanPostProcessor
-
-| BeanPostProcessor                      | 作用                                           |
-| -------------------------------------- | ---------------------------------------------- |
-| AutowiredAnnotationBeanPostProcessor   | 处理@Autowired、@Value注解                     |
-| CommonAnnotationBeanPostProcessor      | 处理@Resource、@PostConstruct、@PreDestroy注解 |
-| AnnotationAwareAspectJAutoProxyCreator | 处理一些注解或者是AOP切面的动态代理            |
-| ApplicationContextAwareProcessor       | 处理Aware接口注入的                            |
-| AsyncAnnotationBeanPostProcessor       | 处理@Async注解                                 |
-| ScheduledAnnotationBeanPostProcessor   | 处理@Scheduled注解                             |
-
-Spring Bean的很多注解的处理都是依靠BeanPostProcessor及其子类的实现来完成的，@Autowired/@PostConstruct/@PreDestroy注解其实就是通过BeanPostProcessor，在Bean的不同阶段来调用对应的方法起作用的；
-
-##### BeanPostProcessor在Dubbo中的使用
-
-在Dubbo中可以通过@DubboReference(@Reference)来引用生产者提供的接口，这个注解的处理也是依靠ReferenceAnnotationBeanPostProcessor，也就是 BeanPostProcessor 的扩展来实现的。
-
-```java
-public class ReferenceAnnotationBeanPostProcessor
-       extends AbstractAnnotationBeanPostProcessor
-       implements ApplicationContextAware, BeanFactoryPostProcessor {
-        // 忽略
-}
-```
-
-当Bean在创建的某一阶段，走到了ReferenceAnnotationBeanPostProcessor这个类，就会根据反射找出这个类有没有@DubboReference(@Reference)注解，有的话就构建一个动态搭理注入就可以了。
-
-#### BeanFactoryPostProcessor
-
-BeanFactoryPostProcessor是对BeanFactory
-
-### Spring process start
-
-**new AnnotationConfigApplicationContext(MainConfig.class)**
-
-![image-20250502173517463](images/image-20250502173517463.png)
-
-#### this();
-
-**this.reader = new AnnotatedBeanDefinitionReader(this)；**reader读取**beanDefinitionAnnotatedBeanDefinitionReader**后续就是为了加载底层功能组件的后置处理器；里面的**registerAnnotationConfigProcessors(registry, null)；registerAnnotationConfigProcessors**注册很多的处理器。给工厂中注册核心组件
-
-```java
-public static Set<BeanDefinitionHolder> registerAnnotationConfigProcessors(
-			BeanDefinitionRegistry registry, @Nullable Object source) {
-
-		DefaultListableBeanFactory beanFactory = unwrapDefaultListableBeanFactory(registry);
-		if (beanFactory != null) {
-			if (!(beanFactory.getDependencyComparator() instanceof AnnotationAwareOrderComparator)) {
-				beanFactory.setDependencyComparator(AnnotationAwareOrderComparator.INSTANCE);
-			}
-			if (!(beanFactory.getAutowireCandidateResolver() instanceof ContextAnnotationAutowireCandidateResolver)) {
-				beanFactory.setAutowireCandidateResolver(new ContextAnnotationAutowireCandidateResolver());
-			}
-		}
-
-		Set<BeanDefinitionHolder> beanDefs = new LinkedHashSet<>(8);
-
-		if (!registry.containsBeanDefinition(CONFIGURATION_ANNOTATION_PROCESSOR_BEAN_NAME)) {
-			RootBeanDefinition def = new RootBeanDefinition(ConfigurationClassPostProcessor.class);
-			def.setSource(source);
-			beanDefs.add(registerPostProcessor(registry, def, CONFIGURATION_ANNOTATION_PROCESSOR_BEAN_NAME));
-		}
-
-		if (!registry.containsBeanDefinition(AUTOWIRED_ANNOTATION_PROCESSOR_BEAN_NAME)) {
-			RootBeanDefinition def = new RootBeanDefinition(AutowiredAnnotationBeanPostProcessor.class);
-			def.setSource(source);
-			beanDefs.add(registerPostProcessor(registry, def, AUTOWIRED_ANNOTATION_PROCESSOR_BEAN_NAME));
-		}
-
-		// Check for JSR-250 support, and if present add the CommonAnnotationBeanPostProcessor.
-		if (jsr250Present && !registry.containsBeanDefinition(COMMON_ANNOTATION_PROCESSOR_BEAN_NAME)) {
-			RootBeanDefinition def = new RootBeanDefinition(CommonAnnotationBeanPostProcessor.class);
-			def.setSource(source);
-			beanDefs.add(registerPostProcessor(registry, def, COMMON_ANNOTATION_PROCESSOR_BEAN_NAME));
-		}
-
-		// Check for JPA support, and if present add the PersistenceAnnotationBeanPostProcessor.
-		if (jpaPresent && !registry.containsBeanDefinition(PERSISTENCE_ANNOTATION_PROCESSOR_BEAN_NAME)) {
-			RootBeanDefinition def = new RootBeanDefinition();
-			try {
-				def.setBeanClass(ClassUtils.forName(PERSISTENCE_ANNOTATION_PROCESSOR_CLASS_NAME,
-						AnnotationConfigUtils.class.getClassLoader()));
-			}
-			catch (ClassNotFoundException ex) {
-				throw new IllegalStateException(
-						"Cannot load optional framework class: " + PERSISTENCE_ANNOTATION_PROCESSOR_CLASS_NAME, ex);
-			}
-			def.setSource(source);
-			beanDefs.add(registerPostProcessor(registry, def, PERSISTENCE_ANNOTATION_PROCESSOR_BEAN_NAME));
-		}
-
-		if (!registry.containsBeanDefinition(EVENT_LISTENER_PROCESSOR_BEAN_NAME)) {
-			RootBeanDefinition def = new RootBeanDefinition(EventListenerMethodProcessor.class);
-			def.setSource(source);
-			beanDefs.add(registerPostProcessor(registry, def, EVENT_LISTENER_PROCESSOR_BEAN_NAME));
-		}
-
-		if (!registry.containsBeanDefinition(EVENT_LISTENER_FACTORY_BEAN_NAME)) {
-			RootBeanDefinition def = new RootBeanDefinition(DefaultEventListenerFactory.class);
-			def.setSource(source);
-			beanDefs.add(registerPostProcessor(registry, def, EVENT_LISTENER_FACTORY_BEAN_NAME));
-		}
-
-		return beanDefs;
-	}
-```
-
->ConfigurationClassPostProcessor.class(BeanFactoryPostProcessor) 处理配置类
->AutowiredAnnotationBeanPostProcessor.class(SmartInstantiationAwareBeanPostProcessor) 自动装配功能
->CommonAnnotationBeanPostProcessor.class(InstantiationAwareBeanPostProcessor)普通JSR250注解处理
->EventListenerMethodProcessor.class(BeanFactoryPostProcessor)事件功能
->DefaultEventListenerFactory.class 事件工厂
-
-**this.scanner = new ClassPathBeanDefinitionScanner(this);** scanner扫描需要导入的所有的bean信息**ClassPathBeanDefinitionScanner**，准备环境变量等一些信息
-
-#### register(componentClasses);
-
-register(componentClasses);注册所有的主配置类，拿到主配置类的BeanDefinition创建出来的信息，AnnotationConfigUtils.processCommonDefinitionAnnotations(abd);完善主配置类的配置信息，把主配置类信息注册到beanDefinitionMap里面
-
-### refresh()
-
-#### prepareRefresh();
-
-准备上下文环境
-
-![image-20250503162813423](images/image-20250503162813423.png)
-
-#### ConfigurableListableBeanFactory beanFactory = obtainFreshBeanFactory();
-
-初始化Bean工厂 不同的工厂不同实现，里面含xml解析逻辑
-
-**xml逻辑**
-
-![image-20250503162932853](images/image-20250503162932853.png)
-
-**注解逻辑，注解是在构造器的时候就创建了beanFactory，这时候直接返回**
-
-![image-20250503162952328](images/image-20250503162952328.png)
-
-#### prepareBeanFactory(beanFactory);
-
-对工厂进行填充属性，给工厂里面设置好必要的工具；比如：el表达式解析器，资源解析器，基本的后置处理器、还注册了一些单实例Bean以下的东西都能自动注册进自己的组件中Environment、Properties
-
-#### postProcessBeanFactory(beanFactory);
-
-空实现，留个子类去实现该接口                                
-
-#### invokeBeanFactoryPostProcessors(beanFactory);
-
-调用我们的bean工厂的后置处理器，基于注解版会调用**ConfigurationClassPostProcessor**解析配置类的后置处理器在此工作，所有的功能的配置和开启都在配置类，如果有其他**BeanFactroyPostProcessor**会继续执行。**ConfigurationClassPostProcessor**没有执行前**singletonObjects**工厂很简单，只有前面步骤注册的简单组件和第一步注册的一些Bean定义信息
-
-![image-20250503163645617](images/image-20250503163645617.png)
-
-在执行**ConfigurationClassPostProcessor**的**ConfigurationClassPostProcessor**
-
-- 拿到工厂中所有Bean定义信息
-- 找到真正的配置类
-- 使用**parser.parse(candidates);**进行配置类解析
-- 解析@ComponentScan、@Component、@Import、@ImportResource...等注解，封装成BeanDefinition放入BeanDefinitionMap中
-
-![image-20250503164756894](images/image-20250503164756894.png)
-
-### Cyclic dependency
+### Spring 循环依赖
 
 关键就是提前**暴露未完全创建完毕的Bean**，在Spring中主要使用了**三级缓存**来解决循环依赖：
 
@@ -901,274 +666,4 @@ addSingletonFactory(beanName,() -> getEarlyBeanReference(beanName,mbd,bean));
 这时候就回到A的属性注入，此时注入B，接着执行初始化，最后A也会被加入到一级缓存里，且从二级换中删除A。Spring解决循环依赖就是按照上面所述的逻辑来实现的。
 
 重点就是在对象实例化之后，都会在三级缓存里加入一个工厂，提前对外暴露还未完整的Bean，这样如果被循环依赖了，对方就可以利用这个工厂得到一个不完整的Bean，破环了循环的条件。
-
-### Spring AOP
-
-#### 初始化流程
-
-每一个功能的开启，要么写配置，要么注解。@EnableXXX开启XXX功能的注解。
-
-```java
-@Configuration
-@EnableAspectJAutoProxy // 开启基于注解的AOP
-public class AopOpenConfig {
-}
-```
-
-![image-20250508134247190](images/image-20250508134247190.png)
-
-**@EnableAspectJAutoProxy** 通过**@Import**导入了**AspectJAutoProxyRegistrar**
-
-![image-20250508134507614](images/image-20250508134507614.png)
-
-给容器中加入了**AspectJAutoProxyRegistrar**，实现了**ImportBeanDefinitionRegistrar**向BeanDefinitionRegistry注册一些东西，之后再refresh()中的invokeBeanFactoryPostProcessors(beanFactory);调用后置处理器，实例化Bean工厂的后置处理器，AspectJAutoProxyRegistrar就实例化了，从而会向registry也就是DefaultListableBeanFactory中加入BeanDefinition（就是向BeanDefinitionMap中添加BeanDefinition）**org.springframework.aop.config.internalAutoProxyCreator**
-
-![image-20250508144046232](images/image-20250508144046232.png)
-
-**AnnotationAwareAspectJAutoProxyCreator**
-
-![image-20250508144512684](images/image-20250508144512684.png)
-
-注册进来的是组件是一个BeanPostProcessor实现类，Bean的后置处理器，所以再Bean工厂增强的环节不会运行，但是再Bean组件创建环节（getBean）会干预到，也就是对组件进行功能增强。目前只是加载了BeanDefinitionMap中，还没有被实例化。
-
-BeanPostProcessor统一实例化的步骤在registerBeanPostProcessors(beanFactory);而且它实现了**Ordered**接口，会首先会被创建，正常的走getBean() => doGetBean() => createBean() => doCreateBean()来创建AnnotationAwareAspectJAutoProxyCreator对象。
-
-在initializeBean，初始化的时候，因为实现了BeanFactoryAware接口，会在这时候调用该回调，从而调用它本身的setBeanFactory()方法
-
-![image-20250508171133525](images/image-20250508171133525.png)
-
-AnnotationAwareAspectJAutoProxyCreator对象在初始化期间initializeBean准备好了其需要的基本信息
-
-```java
-protected void initBeanFactory(ConfigurableListableBeanFactory beanFactory) {
-    // 给AnnotationAwareAspectJAutoProxyCreator对象里面的值进行赋值
-    this.advisorRetrievalHelper = new BeanFactoryAdvisorRetrievalHelperAdapter(beanFactory);
-}
-```
-
->继承Order接口，是想让它在registerProcessor中第一个被创建对象，然后在后面每一次创建对象的时候都会生效，进行增强，不仅后面单实例bean创建时候会被调用，而且如果registerProcessor中还有自定义的PostProcessor待创建也会被调用。
->
->因为该接口还是实现了InstantiationAwareBeanPostProcessor接口，这个接口在createBean中的doCreateBean之前会被干预到
-
-```java
-@Override
-	public Object postProcessBeforeInstantiation(Class<?> beanClass, String beanName) {
-		Object cacheKey = getCacheKey(beanClass, beanName);
-
-		if (!StringUtils.hasLength(beanName) || !this.targetSourcedBeans.contains(beanName)) {
-			// advisedBean不需要增强
-			if (this.advisedBeans.containsKey(cacheKey)) {
-				return null;
-			}
-			// 是不是基础的bean 是不是需要跳过的 重复判断
-			if (isInfrastructureClass(beanClass) || shouldSkip(beanClass, beanName)) {
-				this.advisedBeans.put(cacheKey, Boolean.FALSE);
-				return null;
-			}
-		}
-
-		TargetSource targetSource = getCustomTargetSource(beanClass, beanName);
-		if (targetSource != null) {
-			if (StringUtils.hasLength(beanName)) {
-				this.targetSourcedBeans.add(beanName);
-			}
-			Object[] specificInterceptors = getAdvicesAndAdvisorsForBean(beanClass, beanName, targetSource);
-			Object proxy = createProxy(beanClass, beanName, specificInterceptors, targetSource);
-			this.proxyTypes.put(cacheKey, proxy.getClass());
-			return proxy;
-		}
-
-		return null;
-	}
-```
-
-因为实现了BeanPostProcessor，所以在对象创建之前就会被干涉，**shouldSkip(beanClass, beanName)**其中第一次干涉的时候会获取增强器和切面，放入缓存，避免后续重复遍历获取增强器和切面。
-
-![image-20250514142345774](images/AOP初始化.png)
-
->说明：
->
->1. 创建AnnotationConfigApplicationContext()容器
->2. 在invokeBeanFactoryPostProcessors()中，会调用 ConfigurationClassPostProcessor 的 postProcessBeanDefinitionRegistry() 。在此方法中，会找到 @EnableAspectJAutoProxy 的 @Import 属性传入的 AspectJAutoProxyRegistrar.class 类。并且执行该类的registerBeanDefinitions() 方法，创建类型为 AnnotationAwareAspectJAutoProxyCreator 、名称为org.springframework.aop.
->     config.internalAutoProxyCreator的 RootBeanDefinition注册到BeanDefinitionRegistry中。
->3. 在 registerBeanPostProcessors() 中会根据上面一步生成的 RootBeanDefinition对象创建 AnnotationAwareAspectJAutoProxyCreator 的实例。
->4. 在 finishBeanFactoryInitialization() 中第一次执行到 AbstractAutowireCapableBeanFactory.createBean() 时，postProcessBeforeInstantiation方法会缓存所有的advisor，方法的最后返回 null。至此整个 SpringAOP的初始化完成。
-
-#### 创建动态代理
-
-最后在Bean的实例化finishBeanFactoryInitialization(beanFactory);实例化Bean的时候，会将每一个Bean的初始化之后被干涉，**initializeBean**
-
-![image-20250509105936466](images/image-20250509105936466.png)
-
-在里面会获取所增强器与bean实例进行匹配，如果匹配上了，说明这个bean需要增强，就会对这个bean进行动态代理，创建代理对象。
-
-![image-20250509111212413](images/image-20250509111212413.png)
-
-有了对象，就可以调用方法，底层使用的CGLIB动态代理，在调用sayHello方法时候会将增强器转换成拦截器，执行时候会判断拦截器是否为空，如果为空则直接执行，**retVal = methodProxy.invoke(target, argsToUse);**否则的话，就开始递归调用（责任链模式） **new CglibMethodInvocation(proxy, target, method, args, targetClass, chain, methodProxy).proceed();**
-
-![image-20250514143236105](images/image-20250514143236105.png)
-
->*ExposeInvocationInterceptor*
->
->Around
->
->Before
->
->After
->
->AfterReturning
->
->AfterThrowing
-
-创建动态代理有两种方法，一种是 JDK ，一种是 CGLib 。
-
-1.如果目标类有实现接口的话，则是使用JDK的方式生成代理对象。
-
-2.配置了使用Cglib进行动态代理或者目标类没有实现接口,那么使用Cglib的方式创建代理对象。
-
-#### 调用动态代理
-
-![image-20250515114750280](images/image-20250515114750280.png)
-
-### Spring Event
-
-https://download.csdn.net/blog/column/10901984/128266563
-
-#### 基于注解的实现原理
-
-![image-20250515142452015](images/image-20250515142452015.png)
-
-容器初始化会设置两个创世纪的类，注解的实现原理依赖EventListenerMethodProcessor和DefaultEventListenerFactory的能力；
-
-![image-20250515142642017](images/image-20250515142642017.png)
-
-从类的继承关系分析：EventListenerMethodProcessor是SmartInitializingSingleton和BeanFactroyPostProcessor接口实现类；
-
-- 在容器启动之初调用BeanFactoryPostProcessor的postProcessBeanFactory接口；
-- 在所有的Bean初始化之后执行SmartInitializingSingleton的afterSingletonslnstantiated接口；
-
-容器启动之初，调用**postProcessbeanFactory**方法：
-
-![image-20250515143435470](images/image-20250515143435470.png)
-
-该部分核心逻辑是初始化EventListenerFactory工厂，默认为DefaultEventListenerFactory。一半业务侧并不会实现EventListenerFactory，既postProcessBeanFactory可以理解为从IOC容器中获取DefaultEventListenerFactory对象并复制给eventListenerFactories；
-
-> **getBeansOfType**方法会根据类型查询BeanName，然后getBean创建对象
-
-**在所有的Bean初始化完成后执行SmartInitializingSingleton的afterSingletonsInstantiated接口:**
-
-```java
-@Override
-public void afterSingletonsInstantiated() {
-    ConfigurableListableBeanFactory beanFactory = this.beanFactory;
-    String[] beanNames = beanFactory.getBeanNamesForType(Object.class);
-    for (String beanName : beanNames) {
-        if (!ScopedProxyUtils.isScopedTarget(beanName)) {
-            Class<?> type = null;
-            try {
-                type = AutoProxyUtils.determineTargetClass(beanFactory, beanName);
-            }
-            // ...
-            if (type != null) {
-                if (ScopedObject.class.isAssignableFrom(type)) {
-                    try {
-                        Class<?> targetClass = AutoProxyUtils.determineTargetClass(
-                            beanFactory, ScopedProxyUtils.getTargetBeanName(beanName));
-                        if (targetClass != null) {
-                            type = targetClass;
-                        }
-                    }
-                    // ...
-                }
-                try {
-                    // 上面是对IOC容器中获取所有Bean对象，调用processBean(beanName,type)
-                    processBean(beanName, type);
-                }
-                // ...
-            }
-        }
-    }
-}
-
-```
-
-![image-20250515145049620](images/image-20250515145049620.png)
-
-调用`MethodIntrospector.selectMethods`接口遍历指定类型的所有方法，对于每个方法根据`AnnotatedElementUtils.findMergedAnnotation(method, EventListener.class)` 获得@EventListener注解合并的属性值(@EventListener不允许重复注解)。接口返回Map<Method, EventListener>类型的annotatedMethods集合对象，其中key为方法对象，value为注解在方法上的@EventListener解析生成的对象。
-
-如果annotatedMethods为空表明该类中没有方法被@EventListener注解直接返回；否则遍历annotatedMethods对象，并通过DefaultEventListenerFactory针对每个被注解的方法生成一个ApplicationListenerMethodAdapter类型的ApplicationListener事件监听器，在初始化后注册到Spring容器：
-
-![image-20250515145349574](images/image-20250515145349574.png)
-
-![image-20250515145811289](images/image-20250515145811289.png)
-
-上述代码`context.addApplicationListener(applicationListener);`发生在所有非Lazy单例Bean被初始化后，即applicationEventMulticaster已在`initApplicationEventMulticaster()`步骤被初始化过—不为空：此时同时向事件广播器进行了注册。
-
-**事件发布器**
-
-Spring容器提供的时间发布器接口如下所示：
-
-```java
-@FunctionalInterface
-public interface ApplicationEventPublisher {
-	default void publishEvent(ApplicationEvent event) {
-		publishEvent((Object) event);
-	}
-    // 核心方法
-	void publishEvent(Object event);
-}
-```
-
-AbstractApplicationContext对ApplicationEventPublisher接口提供了实现：
-
-```java
-// 跟进protected void publishEvent(Object event, @Nullable ResolvableType eventType)：
-protected void publishEvent(Object event, @Nullable ResolvableType eventType) {
-    Assert.notNull(event, "Event must not be null");
-
-    // Decorate event as an ApplicationEvent if necessary
-    ApplicationEvent applicationEvent;
-    if (event instanceof ApplicationEvent) {
-        applicationEvent = (ApplicationEvent) event;
-    }
-    else {
-        applicationEvent = new PayloadApplicationEvent<>(this, event);
-        if (eventType == null) {
-            eventType = ((PayloadApplicationEvent<?>) applicationEvent).getResolvableType();
-        }
-    }
-
-    // Multicast right now if possible - or lazily once the multicaster is initialized
-    if (this.earlyApplicationEvents != null) {
-        this.earlyApplicationEvents.add(applicationEvent);
-    }
-    else {
-        getApplicationEventMulticaster().multicastEvent(applicationEvent, eventType);
-    }
-
-    // Publish event via parent context as well...
-    if (this.parent != null) {
-        if (this.parent instanceof AbstractApplicationContext) {
-            ((AbstractApplicationContext) this.parent).publishEvent(event, eventType);
-        }
-        else {
-            this.parent.publishEvent(event);
-        }
-    }
-}
-```
-
-![image-20250515150932237](images/image-20250515150932237.png)
-
-方法的主线逻辑较为清晰：
-
-- 如果入参event的类型不是ApplicationEvent，使用PayloadApplicationEvent进行封装；
-- 如果applicationEventMulticaster属性获取事件广播器，并调用广播事件接口；
-- 如果Spring容器的父容器不为空，调用父容器的事件发布接口进行事件发布；
-
-### Spring Statemachine
-
-https://spring.io/projects/spring-statemachine
-
-Spring Statemachine is a framework for application developers to use state machine concepts with Spring applications.
 
